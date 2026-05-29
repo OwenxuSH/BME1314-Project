@@ -1,0 +1,16 @@
+# Large data files
+_feature_cache_full.npz
+
+# External datasets (hundreds of MB each)
+SEED/
+SEED-V/
+SEED_IV/
+mdJPT_format/
+
+# Training and test data (competition data, not for distribution)
+训练集/
+公开测试集/
+
+# Python
+__pycache__/
+*.pyc
