@@ -125,22 +125,69 @@ def add_temporal_features(de_features):
 # =============================================================================
 # Data Loading
 # =============================================================================
+def build_cache():
+    """
+    Build DE feature cache from raw training data.
+    Called automatically if _feature_cache_full.npz doesn't exist.
+    """
+    print("  Building feature cache from raw data (one-time, ~2 min)...")
+    import h5py as _h5py
+
+    comp_X, comp_y = [], []
+    for subdir, n_subjects in [("正常人", 40), ("抑郁症患者", 20)]:
+        d = os.path.join(DATA_DIR, "训练集", subdir)
+        files = sorted([f for f in os.listdir(d) if f.endswith(".mat")])
+        for fi, fn in enumerate(files):
+            fp = os.path.join(d, fn)
+            try:
+                m = loadmat(fp)
+                neu, pos = m["EEG_data_neu"], m["EEG_data_pos"]
+            except NotImplementedError:
+                with _h5py.File(fp, "r") as f:
+                    neu = np.array(f["EEG_data_neu"])
+                    pos = np.array(f["EEG_data_pos"])
+            if neu.shape[0] != 30:
+                neu = neu.T
+            if pos.shape[0] != 30:
+                pos = pos.T
+            # Concatenate: 4 neutral trials (200s) + 4 positive trials (200s)
+            eeg = np.concatenate([neu, pos], axis=1).astype(np.float64)
+            # Extract DE features from full 400s
+            de = extract_de(eeg, eeg.shape[1])  # (368, 150) per subject
+            # Labels: first 4 trials neutral (0), last 4 positive (1)
+            n_win = de.shape[0]
+            n_per_trial = n_win // 8
+            labels = np.zeros(n_win, dtype=np.int64)
+            labels[4 * n_per_trial:] = 1
+            comp_X.append(de.astype(np.float32))
+            comp_y.append(labels)
+            print(f"    [{fi+1}/{n_subjects}] {subdir}: {fn}  {de.shape}")
+
+    np.savez_compressed(CACHE, comp_X=np.array(comp_X, dtype=object),
+                        comp_y=np.array(comp_y, dtype=object),
+                        extra_X=np.array([], dtype=object),
+                        extra_y=np.array([], dtype=object),
+                        extra_n=np.array([], dtype=object))
+    print(f"  Cache saved to {CACHE}")
+    return comp_X, comp_y
+
+
 def load_competition_data():
     """
-    Load pre-computed DE features for all 60 competition subjects.
-
-    Returns
-    -------
-    subjects : list of (X, y) tuples
-        X : ndarray (368, 150) — DE features per subject
-        y : ndarray (368,) — window-level labels (0=neutral, 1=positive)
+    Load DE features for all 60 competition subjects.
+    Builds cache from raw data if not already cached.
     """
-    cache = np.load(CACHE, allow_pickle=True)
+    if not os.path.exists(CACHE):
+        comp_X, comp_y = build_cache()
+    else:
+        cache = np.load(CACHE, allow_pickle=True)
+        comp_X, comp_y = cache["comp_X"], cache["comp_y"]
+
     subjects = []
-    for i in range(len(cache["comp_X"])):
-        X = cache["comp_X"][i].astype(np.float32)
+    for i in range(len(comp_X)):
+        X = comp_X[i].astype(np.float32)
         X = per_subject_norm(X).astype(np.float32)
-        y = cache["comp_y"][i].astype(np.int64)
+        y = comp_y[i].astype(np.int64)
         subjects.append((X, y))
     return subjects
 
