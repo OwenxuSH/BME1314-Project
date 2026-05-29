@@ -150,15 +150,19 @@ def build_cache():
                 neu = neu.T
             if pos.shape[0] != 30:
                 pos = pos.T
-            # Concatenate: 4 neutral trials (200s) + 4 positive trials (200s)
-            eeg = np.concatenate([neu, pos], axis=1).astype(np.float64)
-            # Extract DE features from full 400s
-            de = extract_de(eeg, eeg.shape[1])  # (368, 150) per subject
-            # Labels: first 4 trials neutral (0), last 4 positive (1)
-            n_win = de.shape[0]
-            n_per_trial = n_win // 8
-            labels = np.zeros(n_win, dtype=np.int64)
-            labels[4 * n_per_trial:] = 1
+            # Extract DE per trial (46 windows each), then concatenate: 8×46 = 368
+            TRIAL_SAMPS = 12500  # 50s at 250Hz
+            de_trials, labels_list = [], []
+            for ti in range(8):
+                if ti < 4:
+                    seg = neu[:, ti * TRIAL_SAMPS:(ti + 1) * TRIAL_SAMPS]
+                    labels_list.append(np.zeros(46, dtype=np.int64))
+                else:
+                    seg = pos[:, (ti - 4) * TRIAL_SAMPS:(ti - 3) * TRIAL_SAMPS]
+                    labels_list.append(np.ones(46, dtype=np.int64))
+                de_trials.append(extract_de(seg, TRIAL_SAMPS))
+            de = np.concatenate(de_trials, axis=0)  # (368, 150) total
+            labels = np.concatenate(labels_list)
             comp_X.append(de.astype(np.float32))
             comp_y.append(labels)
             print(f"    [{fi+1}/{n_subjects}] {subdir}: {fn}  {de.shape}")
